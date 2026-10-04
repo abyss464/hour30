@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">hour30</string>
+    <string name="description">30-hour clock: times before the day boundary show as 24:00–29:59 of the previous day.</string>
+    <string name="enabled">Enabled</string>
+    <string name="boundary">Day boundary hour</string>
+    <string name="boundary_hint">Times before this hour count as the previous day (default 6). Applies at the next clock tick.</string>
+    <string name="inactive">Module is not active in LSPosed; settings cannot reach the hooked apps.</string>
+    <string-array name="scope">
+        <item>com.android.systemui</item>
+        <item>com.miui.aod</item>
+        <item>com.miui.home</item>
+    </string-array>
+</resources>

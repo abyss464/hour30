@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="description">30 小时制时钟：分界点之前的时间显示为前一天的 24:00–29:59。</string>
+    <string name="enabled">启用</string>
+    <string name="boundary">一天的分界小时</string>
+    <string name="boundary_hint">早于此小时的时间算作前一天（默认 6）。下一次时钟刷新时生效。</string>
+    <string name="inactive">模块未在 LSPosed 中激活，设置无法传到被注入的应用。</string>
+</resources>

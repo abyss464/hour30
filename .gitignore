@@ -1,0 +1,6 @@
+.gradle/
+build/
+app/build/
+local.properties
+.task.md
+.run.sh
