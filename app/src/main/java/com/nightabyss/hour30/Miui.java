@@ -1,12 +1,18 @@
 package com.nightabyss.hour30;
 
 import android.content.Context;
+import android.text.SpannableStringBuilder;
+import android.widget.TextView;
 
 import java.lang.reflect.Member;
 import java.util.Calendar;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -28,6 +34,8 @@ final class Miui {
     private static final String CALENDAR = "miuix.pickerwidget.date.Calendar";
     private static final String SYMBOLS = "miuix.pickerwidget.date.CalendarFormatSymbols";
     private static final String MAML_TIME = "com.miui.maml.data.DateTimeVariableUpdater";
+    /** Status bar clock; the shade header and control center clocks extend it. */
+    private static final String STATUS_CLOCK = "com.android.systemui.statusbar.views.MiuiClock";
 
     /** miuix Calendar field numbers: 18 is hour of day; 0-15 are date, weekday and lunar fields. */
     private static final int HOUR = 18;
@@ -68,6 +76,15 @@ final class Miui {
             Shift.attached(CALENDAR, false, new ClassNotFoundException(CALENDAR));
         }
 
+        if (lp.packageName.equals("com.android.systemui")) {
+            Class<?> clock = XposedHelpers.findClassIfExists(STATUS_CLOCK, cl);
+            if (clock == null) {
+                Shift.attached(STATUS_CLOCK, false, new ClassNotFoundException(STATUS_CLOCK));
+            } else if (first(clock, "setText")) {
+                guardClockText(clock);
+            }
+        }
+
         Class<?> maml = XposedHelpers.findClassIfExists(MAML_TIME, cl);
         if (maml != null && first(maml, "updateTime")) {
             scope(maml, "updateTime");
@@ -83,6 +100,62 @@ final class Miui {
                 }
             }
         }
+    }
+
+    private static final List<Class<?>> clockViews = new CopyOnWriteArrayList<>();
+    private static final Pattern TIME = Pattern.compile("(?<!\\d)(\\d{1,2}):(\\d{2})(?!\\d)");
+
+    /**
+     * Last line of defence for the status bar clock: whatever produced its text (stock MiuiClock
+     * ticks once a minute and has no seconds mode on this build; a seconds clock added by another
+     * module may format the time itself and refresh every second), a leading H:mm that still shows
+     * the current hour before the boundary is rewritten to hour+24. Text the formatter hooks already
+     * shifted reads 24-29 and is left alone. Hooks the private TextView.setText that every public
+     * overload ends in, so inlining of the small public overloads cannot bypass it.
+     */
+    private static void guardClockText(Class<?> clock) {
+        boolean firstClock = clockViews.isEmpty();
+        clockViews.add(clock);
+        if (!firstClock) return;
+        String point = STATUS_CLOCK + " text (TextView.setText)";
+        Hook.hook(TextView.class, "setText",
+                new Object[]{CharSequence.class, TextView.BufferType.class, boolean.class, int.class},
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam p) {
+                        CharSequence text = (CharSequence) p.args[0];
+                        if (text == null || text.length() == 0 || !isClockView(p.thisObject)) return;
+                        CharSequence shifted = shiftClockText(text);
+                        if (shifted != text) {
+                            Shift.fired(point);
+                            p.args[0] = shifted;
+                        }
+                    }
+                });
+    }
+
+    private static boolean isClockView(Object view) {
+        for (Class<?> c : clockViews) if (c.isInstance(view)) return true;
+        return false;
+    }
+
+    /** Rewrites the first H:mm equal to the current (or 5 s earlier) hour and minute, if before the boundary. */
+    private static CharSequence shiftClockText(CharSequence text) {
+        Matcher m = TIME.matcher(text);
+        if (!m.find()) return text;
+        int hour = Integer.parseInt(m.group(1));
+        int minute = Integer.parseInt(m.group(2));
+        long now = System.currentTimeMillis();
+        for (long t : new long[]{now, now - 5000}) {
+            Calendar c = Calendar.getInstance();
+            c.setTimeInMillis(t);
+            int h = c.get(Calendar.HOUR_OF_DAY);
+            if (h != hour || c.get(Calendar.MINUTE) != minute || !Shift.applies(h)) continue;
+            SpannableStringBuilder out = new SpannableStringBuilder(text);
+            out.replace(m.start(1), m.end(1), Integer.toString(h + 24));
+            return out;
+        }
+        return text;
     }
 
     private static boolean first(Class<?> cls, String method) {

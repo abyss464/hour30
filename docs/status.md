@@ -52,7 +52,33 @@ own copy. The hooks are resolved in each app's class loader.
 | `miuix.pickerwidget.date.Calendar.get(int)`, active only inside a scope | field 18 (hour) → `h+24`; fields 0-15 (era, year, month, day, weekday, day of year, lunar year/month/day, stems and branches, solar term) → previous day | compiled only |
 | Scope: `com.miui.maml.data.DateTimeVariableUpdater.updateTime` (SystemUI, AOD and Home each bundle MAML) | MAML variables `hour24`, `year`, `month`, `date`, `day_of_week`, lunar variables → **launcher clock widgets** (`gadget.AwesomeClock`), theme lock screens, AOD MAML clocks, including digit-image themes driven by `#hour24` | compiled only |
 | Scope (AOD): `HorizontalClock`, `VerticalClock`, `DualClock`, `SunClock`, `ClockPanel`, `SmartCoverClockView`, `SmartCoverClockBView`, `ImageSelectorClock`, `SuperWallpaperClock` `.updateTime`; `ClockPanel.setClockTime`, `DualClockPanelContainerView.setClockTime` | **AOD clock styles**: these build their digits with `String.format("%d:%02d", get(18), …)`. `OneLineClock`, `ScopeClock` and `PaintVerticalClock` inherit from them and are covered | compiled only |
+| `android.widget.TextView.setText(CharSequence, BufferType, boolean, int)` (private; every public `setText` ends here, read in the ROM's framework.jar), filtered to instances of `statusbar.views.MiuiClock` | Fallback for the **status bar / shade header / control center clock text**, whatever produced it. See "Seconds clock" below | compiled only |
 | Every scope method is deoptimized | keeps AOT inlining of the small `Calendar.get` from bypassing the hook | compiled only |
+
+## Seconds clock
+
+In this build, none of MIUI's own clocks has a seconds mode:
+
+- `statusbar.views.MiuiClock` (status bar; `ControlCenterClockView` and the shade headers extend it) has
+  modes for time, date-time, date and weekday only. It redraws when
+  `MiuiStatusBarClockController` relays `TIME_TICK`, `TIME_SET` or a time zone change, which is once a
+  minute. No setting adds seconds to it.
+- The lock screen clocks (`com.miui.clock.*`, driven by `MiuiClockController`) also refresh on
+  `TIME_TICK` and have no seconds field.
+- The only clock in System UI that can show seconds is AOSP's `statusbar.policy.Clock`: SystemUI Tuner
+  key `clock_seconds`, a per-second `postAtTime` tick, and text from
+  `java.text.SimpleDateFormat(getBestPattern("Hms")).format(Date)`. The generic layer's
+  `java.text.SimpleDateFormat` hook already covers it, date included. MIUI shows this clock only in the
+  AOSP `combined_qs_header` / `large_screen_shade_header` layouts, not on the phone status bar.
+
+A seconds display on the MIUI status bar therefore comes from another module. Such a module either
+formats through a hooked formatter, which is shifted with its date as usual, or builds the text
+itself, for example from `java.util.Calendar` fields every second, which no formatter hook can see.
+For that second case, the `TextView.setText` guard on `MiuiClock` instances rewrites the first `H:mm`
+that equals the current hour and minute (or those of 5 seconds earlier, for a tick that lands on a
+minute change) to hour+24 when that hour is before the boundary. Text the formatter hooks already
+shifted reads 24-29 and passes through unchanged. Limitation: in text a third-party module builds
+itself, only the hour is fixed; any date it contains is not shifted.
 
 ## Not adapted, and why
 
